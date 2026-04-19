@@ -3,11 +3,16 @@ import cv2
 import numpy as np
 import math
 
+# ================= CONFIG =================
 tracker_yaml_path = "/kaggle/working/bytetrack.yaml"
 
 model_sign = YOLO('/kaggle/input/datasets/quannh206/model-yolo/yolov11s.pt')
 model_vehicle = YOLO('/kaggle/input/datasets/quannh206/jjjjjj/yolo11m-big-25-2stg.pt')
 
+video_path = '/kaggle/input/datasets/quannh206/556516/video_frame.mp4'
+output_path = '/kaggle/working/output.mp4'
+
+# ================= POLYGON =================
 lane_left = [(19, 553), (51, 523), (243, 585), (93, 689), (48, 614)]
 lane_mid = [(100, 694), (314, 541), (666, 541), (644, 651), (595, 784), (370, 783), (203, 783)]
 lane_right = [(606, 785), (669, 546), (813, 522), (792, 635), (699, 748)]
@@ -16,6 +21,7 @@ exit_right = [(647, 383), (759, 509), (841, 491), (843, 451), (737, 386)]
 exit_left = [(79, 497), (161, 352), (71, 353), (19, 467), (54, 462)]
 exit_straight = [(163, 338), (179, 363), (345, 355), (265, 325), (170, 336)]
 
+# ================= HELPER =================
 def in_poly(cx, cy, poly):
     return cv2.pointPolygonTest(np.array(poly, np.int32), (cx, cy), False) >= 0
 
@@ -33,9 +39,7 @@ def box_in_poly_ratio(x1, y1, x2, y2, poly, h, w):
         return 0
     return overlap / box_area
 
-video_path = '/kaggle/input/datasets/quannh206/556516/video_frame.mp4'
-output_path = '/kaggle/working/output.mp4'
-
+# ================= VIDEO =================
 cap = cv2.VideoCapture(video_path)
 
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -46,14 +50,17 @@ out = cv2.VideoWriter(output_path,
                       cv2.VideoWriter_fourcc(*'mp4v'),
                       fps, (w, h))
 
+# ================= STATE =================
 lane_map = {}
 direction_map = {}
 valid_ids = set()
 violation_ids = set()
+violation_log = {}
 
 last_positions = {}
 frame_count = 0
 
+# ================= LOOP =================
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -72,6 +79,7 @@ while cap.isOpened():
 
     r_sign = model_sign(frame, conf=0.2, verbose=False)[0]
 
+    # collect current IDs
     if r_vehicle.boxes.id is not None:
         for box in r_vehicle.boxes:
             if box.id is not None:
@@ -117,7 +125,7 @@ while cap.isOpened():
                             valid_ids.add(track_id)
                         break
 
-        # ===== update position (fix bug) =====
+        # update
         last_positions[track_id] = (cx, cy, frame_count, (x1, y1, x2, y2), class_name)
 
         # ===== VALID =====
@@ -157,17 +165,22 @@ while cap.isOpened():
             if lane_map[track_id] != direction_map[track_id]:
                 violation = True
 
+        if violation:
+            violation_ids.add(track_id)
+
+            if track_id not in violation_log:
+                violation_log[track_id] = round(frame_count / fps, 2)
+
+        # ===== DRAW =====
         color = (0,0,255) if violation else (0,255,0)
 
         label = f"{class_name} ID:{track_id}"
-
         if track_id in lane_map:
             label += f" | {lane_map[track_id]}"
         if track_id in direction_map:
             label += f" -> {direction_map[track_id]}"
         if violation:
             label += " VIOLATION"
-            violation_ids.add(track_id)
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, label, (x1, y1-5),
@@ -183,7 +196,12 @@ while cap.isOpened():
 
     out.write(frame)
 
+# ================= DONE =================
 cap.release()
 out.release()
 
 print("DONE:", output_path)
+
+print("\n=== VIOLATION LOG ===")
+for vid, t in violation_log.items():
+    print(f"Vehicle ID {vid} violated at {t} sec")
