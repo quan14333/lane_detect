@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-model = YOLO("yolo11s.pt")  # 🔥 đổi sang s (tốt hơn cho data nhỏ)
+model = YOLO("yolo11s.pt")
 
 model.train(
     data="/kaggle/working/data.yaml",
